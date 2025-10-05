@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交易所主力动向监控面板</title>
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            animation: fadeIn 1s ease-in;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .update-time {
+            font-size: 1rem;
+            opacity: 0.8;
+        }
+
+        .dashboard {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            animation: slideUp 0.8s ease-out;
+        }
+
+        .chart-container:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .chart-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .exchange-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .binance-badge {
+            background: linear-gradient(45deg, #f3ba2f, #f7931a);
+        }
+
+        .okx-badge {
+            background: linear-gradient(45deg, #2196f3, #1976d2);
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .tv-chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2rem;
+            opacity: 0.7;
+            z-index: 10;
+        }
+
+        .error {
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .stats-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        .status-connected {
+            background: linear-gradient(45deg, #4caf50, #45a049);
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .status-error {
+            background: linear-gradient(45deg, #f44336, #d32f2f);
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .coin-selector {
+            padding: 10px 20px;
+            border-radius: 25px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0 5px;
+        }
+
+        .coin-selector:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .coin-selector.active {
+            background: linear-gradient(45deg, #4caf50, #45a049);
+            border-color: #4caf50;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .dashboard {
+                max-width: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">
+        <span id="statusText">连接中...</span>
+    </div>
+
+    <div class="header">
+        <h1>交易所主力动向监控面板</h1>
+        <div class="controls">
+            <button class="coin-selector active" data-coin="BTC">BTC</button>
+            <button class="coin-selector" data-coin="ETH">ETH</button>
+        </div>
+        <div class="update-time">最后更新: <span id="lastUpdate">-</span></div>
+    </div>
+
+    <div class="dashboard">
+        <!-- 币安持仓量图表 -->
+        <div class="chart-container">
+            <div class="chart-header">
+                <div class="chart-title">持仓量 (OI)</div>
+                <div class="exchange-badge binance-badge">币安</div>
+            </div>
+            <div class="chart-wrapper">
+                <div id="binanceOIChart" class="tv-chart"></div>
+                <div class="loading" id="binanceOILoading">加载中...</div>
+            </div>
+            <div class="stats-info">
+                <span>单位: 合约数量</span>
+                <span id="binanceOILatest">最新: -</span>
+            </div>
+        </div>
+
+        <!-- 币安精英多空比图表 -->
+        <div class="chart-container">
+            <div class="chart-header">
+                <div class="chart-title">精英多空比</div>
+                <div class="exchange-badge binance-badge">币安</div>
+            </div>
+            <div class="chart-wrapper">
+                <div id="binanceRatioChart" class="tv-chart"></div>
+                <div class="loading" id="binanceRatioLoading">加载中...</div>
+            </div>
+            <div class="stats-info">
+                <span>单位: 比值</span>
+                <span id="binanceRatioLatest">最新: -</span>
+            </div>
+        </div>
+
+        <!-- 欧易持仓量图表 -->
+        <div class="chart-container">
+            <div class="chart-header">
+                <div class="chart-title">持仓量 (OI)</div>
+                <div class="exchange-badge okx-badge">欧易</div>
+            </div>
+            <div class="chart-wrapper">
+                <div id="okxOIChart" class="tv-chart"></div>
+                <div class="loading" id="okxOILoading">加载中...</div>
+            </div>
+            <div class="stats-info">
+                <span>单位: 合约数量</span>
+                <span id="okxOILatest">最新: -</span>
+            </div>
+        </div>
+
+        <!-- 欧易精英多空比图表 -->
+        <div class="chart-container">
+            <div class="chart-header">
+                <div class="chart-title">精英多空比</div>
+                <div class="exchange-badge okx-badge">欧易</div>
+            </div>
+            <div class="chart-wrapper">
+                <div id="okxRatioChart" class="tv-chart"></div>
+                <div class="loading" id="okxRatioLoading">加载中...</div>
+            </div>
+            <div class="stats-info">
+                <span>单位: 比值</span>
+                <span id="okxRatioLatest">最新: -</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局配置
+        const CONFIG = {
+            baseUrl: window.location.origin,
+            refreshInterval: 1000, // 1000ms刷新一次 (每秒1次)
+            maxDataPoints: 50,
+            retryAttempts: 3,
+            retryDelay: 1000,
+            currentCoin: 'BTC',
+            coinMap: {
+                'BTC': {
+                    binance: 'BTCUSDT',
+                    okx: 'BTC-USDT-SWAP'
+                },
+                'ETH': {
+                    binance: 'ETHUSDT',
+                    okx: 'ETH-USDT-SWAP'
+                }
+            }
+        };
+
+        // 图表实例
+        let charts = {
+            binanceOI: null,
+            binanceRatio: null,
+            okxOI: null,
+            okxRatio: null
+        };
+
+        // TradingView 图表配置
+        const chartOptions = {
+            layout: {
+                background: { type: 'solid', color: 'rgba(0, 0, 0, 0)' },
+                textColor: 'rgba(255, 255, 255, 0.9)',
+            },
+            grid: {
+                vertLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                horzLines: { color: 'rgba(255, 255, 255, 0.1)' },
+            },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+                // 自动滚动到最新数据
+            },
+            rightPriceScale: {
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+            },
+            crosshair: {
+                mode: 1,
+                vertLine: {
+                    color: 'rgba(255, 255, 255, 0.3)',
+                    width: 1,
+                },
+                horzLine: {
+                    color: 'rgba(255, 255, 255, 0.3)',
+                    width: 1,
+                },
+            },
+        };
+
+        // 跟踪用户是否正在主动查看历史数据
+        let userViewingHistory = {};
+        let lastScrollPositions = {};
+
+        // 数据存储
+        let dataStore = {
+            binanceOI: [],
+            binanceRatio: [],
+            okxOI: [],
+            okxRatio: []
+        };
+
+        // 连接状态管理
+        let connectionStatus = {
+            connected: false,
+            errors: 0
+        };
+
+        // 更新连接状态显示
+        function updateConnectionStatus(connected, error = null) {
+            const statusElement = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+
+            if (connected) {
+                statusElement.className = 'connection-status status-connected';
+                statusText.textContent = '连接正常';
+                connectionStatus.connected = true;
+                connectionStatus.errors = 0;
+            } else {
+                statusElement.className = 'connection-status status-error';
+                statusText.textContent = error ? `连接错误: ${error}` : '连接失败';
+                connectionStatus.connected = false;
+                connectionStatus.errors++;
+            }
+        }
+
+        // 带重试的fetch函数
+        async function fetchWithRetry(url, retries = CONFIG.retryAttempts) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.warn(`请求失败 (尝试 ${i + 1}/${retries}):`, error.message);
+                    if (i === retries - 1) {
+                        throw error;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, CONFIG.retryDelay));
+                }
+            }
+        }
+
+        // 北京时间格式化函数
+        function formatBeijingTime(timestamp) {
+            // timestamp是毫秒级Unix时间戳
+            const date = new Date(parseInt(timestamp));
+            return date.toLocaleString('zh-CN', {
+                timeZone: 'Asia/Shanghai',
+                hour12: false,
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // 获取币安持仓量数据
+        async function fetchBinanceOI() {
+            try {
+                const symbol = CONFIG.coinMap[CONFIG.currentCoin].binance;
+                const data = await fetchWithRetry(`${CONFIG.baseUrl}/api/binance/oi?symbol=${symbol}`);
+                return data.map(item => ({
+                    timestamp: item.timestamp,
+                    value: parseFloat(item.sumOpenInterest), // 使用合约单位
+                    time: formatBeijingTime(item.timestamp)
+                }));
+            } catch (error) {
+                console.error('获取币安OI数据失败:', error);
+                throw error;
+            }
+        }
+
+        // 获取币安精英多空比数据
+        async function fetchBinanceRatio() {
+            try {
+                const symbol = CONFIG.coinMap[CONFIG.currentCoin].binance;
+                const data = await fetchWithRetry(`${CONFIG.baseUrl}/api/binance/ratio?symbol=${symbol}`);
+                return data.map(item => ({
+                    timestamp: item.timestamp,
+                    value: parseFloat(item.longShortRatio), // 使用大户多空持仓量比值
+                    time: formatBeijingTime(item.timestamp)
+                }));
+            } catch (error) {
+                console.error('获取币安多空比数据失败:', error);
+                throw error;
+            }
+        }
+
+        // 获取欧易持仓量数据
+        async function fetchOKXOI() {
+            try {
+                const instId = CONFIG.coinMap[CONFIG.currentCoin].okx;
+                const result = await fetchWithRetry(`${CONFIG.baseUrl}/api/okx/oi?instId=${instId}`);
+                if (result.code !== '0') {
+                    throw new Error(`API error: ${result.msg}`);
+                }
+                return result.data
+                    .map(item => ({
+                        timestamp: parseInt(item[0]),
+                        value: parseFloat(item[1]), // 使用合约单位的持仓量
+                        time: formatBeijingTime(parseInt(item[0]))
+                    }))
+                    .sort((a, b) => a.timestamp - b.timestamp); // 按时间戳升序排列
+            } catch (error) {
+                console.error('获取欧易OI数据失败:', error);
+                throw error;
+            }
+        }
+
+        // 获取欧易精英多空比数据
+        async function fetchOKXRatio() {
+            try {
+                const instId = CONFIG.coinMap[CONFIG.currentCoin].okx;
+                const result = await fetchWithRetry(`${CONFIG.baseUrl}/api/okx/ratio?instId=${instId}`);
+                if (result.code !== '0') {
+                    throw new Error(`API error: ${result.msg}`);
+                }
+                return result.data
+                    .filter(item => parseFloat(item[1]) > 0) // 过滤掉0.00的数据点
+                    .map(item => ({
+                        timestamp: parseInt(item[0]),
+                        value: parseFloat(item[1]), // 多空仓位比值
+                        time: formatBeijingTime(parseInt(item[0]))
+                    }))
+                    .sort((a, b) => a.timestamp - b.timestamp); // 按时间戳升序排列
+            } catch (error) {
+                console.error('获取欧易多空比数据失败:', error);
+                throw error;
+            }
+        }
+
+        // 创建TradingView图表
+        function createTradingViewChart(containerId, color, title) {
+            try {
+                const container = document.getElementById(containerId);
+                if (!container) {
+                    throw new Error(`容器 ${containerId} 不存在`);
+                }
+
+                const chart = LightweightCharts.createChart(container, {
+                    ...chartOptions,
+                    width: container.clientWidth,
+                    height: container.clientHeight,
+                });
+
+                const lineSeries = chart.addLineSeries({
+                    color: color,
+                    lineWidth: 2,
+                    title: title,
+                    priceScaleId: 'right',
+                });
+
+                // 监听时间轴变化，跟踪用户是否在查看历史数据
+                const timeScale = chart.timeScale();
+                const chartKey = containerId;
+
+                timeScale.subscribeVisibleTimeRangeChange(() => {
+                    const visibleRange = timeScale.getVisibleLogicalRange();
+                    const dataRange = lineSeries.getLogicalRange();
+
+                    if (visibleRange && dataRange) {
+                        // 如果用户没有看到最新数据（有一定容差）
+                        const isViewingLatest = visibleRange.to >= dataRange.to - 2;
+                        userViewingHistory[chartKey] = !isViewingLatest;
+                        lastScrollPositions[chartKey] = visibleRange;
+                    }
+                });
+
+                return { chart, lineSeries };
+            } catch (error) {
+                console.error(`创建TradingView图表失败 (${containerId}):`, error);
+                return null;
+            }
+        }
+
+        // 初始化图表
+        function initCharts() {
+            charts.binanceOI = createTradingViewChart('binanceOIChart', '#f3ba2f', '币安 持仓量');
+            charts.binanceRatio = createTradingViewChart('binanceRatioChart', '#f7931a', '币安 多空比');
+            charts.okxOI = createTradingViewChart('okxOIChart', '#2196f3', '欧易 持仓量');
+            charts.okxRatio = createTradingViewChart('okxRatioChart', '#1976d2', '欧易 多空比');
+
+            // 检查是否所有图表都创建成功
+            const failedCharts = Object.entries(charts).filter(([key, value]) => value === null);
+            if (failedCharts.length > 0) {
+                console.error('部分TradingView图表创建失败:', failedCharts.map(([key]) => key));
+                console.log('回退到Chart.js');
+                return false;
+            }
+
+            return true;
+        }
+
+        // 处理最新时间点的数据更新
+        function mergeLatestData(oldData, newData) {
+            if (!oldData || oldData.length === 0) return newData;
+            if (!newData || newData.length === 0) return oldData;
+
+            const result = [...oldData];
+            const latestOldTimestamp = oldData[oldData.length - 1].timestamp;
+            const latestNewTimestamp = newData[newData.length - 1].timestamp;
+
+            // 如果最新时间戳相同，更新最新数据点
+            if (latestOldTimestamp === latestNewTimestamp) {
+                result[result.length - 1] = newData[newData.length - 1];
+            } else {
+                // 添加新数据点
+                result.push(newData[newData.length - 1]);
+            }
+
+            return result;
+        }
+
+        // 更新图表数据
+        function updateChart(chart, data, storeKey, latestId) {
+            if (!chart || !data || data.length === 0) return;
+
+            // 合并最新数据，避免重复时间戳
+            const mergedData = mergeLatestData(dataStore[storeKey], data);
+            dataStore[storeKey] = mergedData.slice(-CONFIG.maxDataPoints);
+
+            // 检查是否是TradingView图表
+            if (chart.lineSeries && chart.chart) {
+                // TradingView图表
+                const tvData = dataStore[storeKey].map(item => ({
+                    time: Math.floor(item.timestamp / 1000), // TradingView使用秒级时间戳
+                    value: item.value
+                }));
+
+                try {
+                    const chartKey = latestId.replace('Latest', '');
+                    const wasViewingLatest = !userViewingHistory[chartKey];
+
+                    chart.lineSeries.setData(tvData);
+
+                    // 智能滚动：如果用户之前在看最新数据，继续跟踪最新数据
+                    // 如果用户在看历史数据，保持当前位置
+                    if (wasViewingLatest && chartKey && charts[chartKey]) {
+                        // 滚动到最新数据，但不要过于频繁
+                        const timeScale = chart.chart.timeScale();
+                        timeScale.scrollToRealTime();
+                    }
+
+                } catch (error) {
+                    console.error('更新TradingView图表失败:', error);
+                    return;
+                }
+            } else {
+                // Chart.js图表
+                try {
+                    chart.data.labels = dataStore[storeKey].map(item => item.time);
+                    chart.data.datasets[0].data = dataStore[storeKey].map(item => item.value);
+                    chart.update('none');
+                } catch (error) {
+                    console.error('更新Chart.js图表失败:', error);
+                    return;
+                }
+            }
+
+            // 更新最新值显示
+            const latestElement = document.getElementById(latestId);
+            if (latestElement && dataStore[storeKey].length > 0) {
+                const latestValue = dataStore[storeKey][dataStore[storeKey].length - 1].value;
+                latestElement.textContent = `最新: ${latestValue.toFixed(2)}`;
+            }
+        }
+
+        // 隐藏加载提示
+        function hideLoading(loadingId) {
+            const loadingElement = document.getElementById(loadingId);
+            if (loadingElement) {
+                loadingElement.style.display = 'none';
+            }
+        }
+
+        // 更新最后更新时间
+        function updateLastUpdateTime() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = formatBeijingTime(now.getTime());
+        }
+
+        // 获取所有数据并更新图表
+        async function updateAllData() {
+            const updatePromises = [
+                fetchBinanceOI()
+                    .then(data => {
+                        updateChart(charts.binanceOI, data, 'binanceOI', 'binanceOILatest');
+                        hideLoading('binanceOILoading');
+                    })
+                    .catch(error => {
+                        console.error('币安OI更新失败:', error);
+                        hideLoading('binanceOILoading');
+                    }),
+
+                fetchBinanceRatio()
+                    .then(data => {
+                        updateChart(charts.binanceRatio, data, 'binanceRatio', 'binanceRatioLatest');
+                        hideLoading('binanceRatioLoading');
+                    })
+                    .catch(error => {
+                        console.error('币安多空比更新失败:', error);
+                        hideLoading('binanceRatioLoading');
+                    }),
+
+                fetchOKXOI()
+                    .then(data => {
+                        updateChart(charts.okxOI, data, 'okxOI', 'okxOILatest');
+                        hideLoading('okxOILoading');
+                    })
+                    .catch(error => {
+                        console.error('欧易OI更新失败:', error);
+                        hideLoading('okxOILoading');
+                    }),
+
+                fetchOKXRatio()
+                    .then(data => {
+                        updateChart(charts.okxRatio, data, 'okxRatio', 'okxRatioLatest');
+                        hideLoading('okxRatioLoading');
+                    })
+                    .catch(error => {
+                        console.error('欧易多空比更新失败:', error);
+                        hideLoading('okxRatioLoading');
+                    })
+            ];
+
+            const results = await Promise.allSettled(updatePromises);
+
+            // 检查是否有任何请求成功
+            const hasSuccessfulRequests = results.some(result => result.status === 'fulfilled');
+
+            if (hasSuccessfulRequests) {
+                updateConnectionStatus(true);
+            } else {
+                updateConnectionStatus(false, '所有API请求失败');
+            }
+
+            updateLastUpdateTime();
+        }
+
+        // Chart.js 回退方案
+        function initChartJS() {
+            console.log('使用Chart.js作为回退方案');
+
+            // 恢复Chart.js的HTML结构
+            document.querySelectorAll('.tv-chart').forEach(el => {
+                const canvas = document.createElement('canvas');
+                canvas.id = el.id;
+                canvas.style.width = '100%';
+                canvas.style.height = '100%';
+                el.parentNode.replaceChild(canvas, el);
+            });
+
+            // 创建Chart.js图表配置
+            function createChartConfig(title, color, yLabel) {
+                return {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: title,
+                            data: [],
+                            borderColor: color,
+                            backgroundColor: color + '20',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleColor: '#fff',
+                                bodyColor: '#fff',
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                ticks: { color: 'rgba(255, 255, 255, 0.7)' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                ticks: { color: 'rgba(255, 255, 255, 0.7)' }
+                            }
+                        }
+                    }
+                };
+            }
+
+            // 初始化Chart.js图表
+            charts.binanceOI = new Chart(document.getElementById('binanceOIChart'), createChartConfig('币安 持仓量', '#f3ba2f', '合约数量'));
+            charts.binanceRatio = new Chart(document.getElementById('binanceRatioChart'), createChartConfig('币安 多空比', '#f7931a', '比值'));
+            charts.okxOI = new Chart(document.getElementById('okxOIChart'), createChartConfig('欧易 持仓量', '#2196f3', '合约数量'));
+            charts.okxRatio = new Chart(document.getElementById('okxRatioChart'), createChartConfig('欧易 多空比', '#1976d2', '比值'));
+
+            // 重写updateChart函数为Chart.js版本
+            updateChart = function(chart, data, storeKey, latestId) {
+                if (!data || data.length === 0) return;
+
+                dataStore[storeKey] = data.slice(-CONFIG.maxDataPoints);
+
+                chart.data.labels = dataStore[storeKey].map(item => item.time);
+                chart.data.datasets[0].data = dataStore[storeKey].map(item => item.value);
+                chart.update('none');
+
+                const latestElement = document.getElementById(latestId);
+                if (latestElement && dataStore[storeKey].length > 0) {
+                    const latestValue = dataStore[storeKey][dataStore[storeKey].length - 1].value;
+                    latestElement.textContent = `最新: ${latestValue.toFixed(2)}`;
+                }
+            };
+
+            // 继续初始化
+            continueInit();
+        }
+
+        // 切换币种
+        function switchCoin(coin) {
+            if (coin === CONFIG.currentCoin) return;
+
+            CONFIG.currentCoin = coin;
+
+            // 更新按钮状态
+            document.querySelectorAll('.coin-selector').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-coin="${coin}"]`).classList.add('active');
+
+            // 清空数据存储
+            dataStore = {
+                binanceOI: [],
+                binanceRatio: [],
+                okxOI: [],
+                okxRatio: []
+            };
+
+            // 显示加载状态
+            document.querySelectorAll('.loading').forEach(el => {
+                el.style.display = 'block';
+            });
+
+            // 立即更新数据
+            updateAllData();
+        }
+
+        // 继续初始化的函数
+        function continueInit() {
+            // 绑定币种切换事件
+            document.querySelectorAll('.coin-selector').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    switchCoin(btn.dataset.coin);
+                });
+            });
+
+            console.log('开始获取初始数据...');
+            updateAllData().then(() => {
+                console.log(`设置定时刷新，间隔: ${CONFIG.refreshInterval}ms`);
+                setInterval(updateAllData, CONFIG.refreshInterval);
+            });
+        }
+
+        // 检查TradingView是否加载
+        function checkTradingViewLoaded() {
+            return typeof LightweightCharts !== 'undefined';
+        }
+
+        // 初始化
+        async function init() {
+            // 等待TradingView库加载
+            let attempts = 0;
+            while (!checkTradingViewLoaded() && attempts < 50) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                attempts++;
+            }
+
+            if (!checkTradingViewLoaded()) {
+                console.error('TradingView库加载失败，回退到Chart.js');
+                // 回退到Chart.js
+                return initChartJS();
+            }
+
+            console.log('TradingView库加载成功，尝试使用TradingView图表');
+            console.log('初始化图表...');
+            const success = initCharts();
+
+            if (!success) {
+                console.log('TradingView图表初始化失败，回退到Chart.js');
+                return initChartJS();
+            }
+
+            console.log('TradingView图表初始化成功');
+            // 继续初始化
+            continueInit();
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('页面加载完成，开始初始化...');
+            init();
+        });
+
+        // 处理页面可见性变化
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('页面隐藏，暂停更新');
+            } else {
+                console.log('页面可见，恢复更新');
+                updateAllData();
+            }
+        });
+
+        // 处理窗口大小变化
+        window.addEventListener('resize', () => {
+            Object.values(charts).forEach(chart => {
+                if (chart && chart.chart) {
+                    const container = chart.chart._canvasElement.parentElement;
+                    chart.chart.applyOptions({
+                        width: container.clientWidth,
+                        height: container.clientHeight,
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
